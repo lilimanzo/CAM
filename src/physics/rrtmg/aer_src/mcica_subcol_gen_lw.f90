@@ -43,9 +43,10 @@ public :: mcica_subcol_lw
 contains
 !=========================================================================================
 
+! XL added liq_tauc, ice_tauc, liq_taucmcl, ice_taucmcl
 subroutine mcica_subcol_lw(lchnk, ncol, nlay, icld, permuteseed, play, &
-                       cldfrac, ciwp, clwp, rei, rel, tauc, cldfmcl, &
-                       ciwpmcl, clwpmcl, reicmcl, relqmcl, taucmcl)
+                       cldfrac, ciwp, clwp, rei, rel, tauc, liq_tauc, ice_tauc,  cldfmcl, & 
+                       ciwpmcl, clwpmcl, reicmcl, relqmcl, taucmcl, liq_taucmcl, ice_taucmcl)
 
    ! ----- Input -----
    ! Control
@@ -67,6 +68,9 @@ subroutine mcica_subcol_lw(lchnk, ncol, nlay, icld, permuteseed, play, &
                                                      !    Dimensions: (ncol,nlay)
    real(kind=r8), intent(in) :: tauc(:,:,:)        ! cloud optical depth
                                                      !    Dimensions: (nbndlw,ncol,nlay)
+   real(kind=r8), intent(in) :: liq_tauc(:,:,:)    ! XL added cloud liq optical depth
+   real(kind=r8), intent(in) :: ice_tauc(:,:,:)    ! XL added cloud ice optical depth
+                                                     
    real(kind=r8), intent(in) :: ciwp(:,:)          ! cloud ice water path
                                                      !    Dimensions: (ncol,nlay)
    real(kind=r8), intent(in) :: clwp(:,:)          ! cloud liquid water path
@@ -90,6 +94,8 @@ subroutine mcica_subcol_lw(lchnk, ncol, nlay, icld, permuteseed, play, &
                                                      !    Dimensions: (ncol,nlay)
    real(kind=r8), intent(out) :: taucmcl(:,:,:)    ! cloud optical depth [mcica]
                                                      !    Dimensions: (ngptlw,ncol,nlay)
+   real(kind=r8), intent(out) :: liq_taucmcl(:,:,:) ! XL added cloud liq optical depth [mcica]
+   real(kind=r8), intent(out) :: ice_taucmcl(:,:,:) ! XL added cloud liq optical depth [mcica]
    ! ----- Local -----
 
    ! Stochastic cloud generator variables [mcica]
@@ -116,19 +122,21 @@ subroutine mcica_subcol_lw(lchnk, ncol, nlay, icld, permuteseed, play, &
    pmid(:ncol,:nlay)    = play(:ncol,:nlay)*1.e2_r8
 
    ! Generate the stochastic subcolumns of cloud optical properties for the longwave;
+   ! XL added liq_tauc, ice_tauc, liq_taucmcl, ice_taucmcl
    call generate_stochastic_clouds( &
       ncol, nlay, nsubclw, icld, pmid, &
-      cldfrac, clwp, ciwp, tauc, cldfmcl, &
-      clwpmcl, ciwpmcl, taucmcl, permuteseed)
+      cldfrac, clwp, ciwp, tauc, liq_tauc, ice_tauc, cldfmcl, &
+      clwpmcl, ciwpmcl, taucmcl, liq_taucmcl, ice_taucmcl, permuteseed)
 
 end subroutine mcica_subcol_lw
 
 !=========================================================================================
 
+! XL added liq_tauc, ice_tauc, liq_tauc_stoch, ice_tauc_stoch
 subroutine generate_stochastic_clouds( &
    ncol, nlay, nsubcol, icld, pmid, &
-   cld, clwp, ciwp, tauc, cld_stoch, &
-   clwp_stoch, ciwp_stoch, tauc_stoch, changeSeed) 
+   cld, clwp, ciwp, tauc, liq_tauc, ice_tauc, cld_stoch, &
+   clwp_stoch, ciwp_stoch, tauc_stoch, liq_tauc_stoch, ice_tauc_stoch, changeSeed) 
 
    !----------------------------------------------------------------------------------------------------------------
    ! ---------------------
@@ -208,6 +216,9 @@ subroutine generate_stochastic_clouds( &
                                                      !    Dimensions: (ncol,nlay)
    real(kind=r8), intent(in) :: tauc(:,:,:)        ! cloud optical depth
                                                      !    Dimensions: (nbndlw,ncol,nlay)
+   real(kind=r8), intent(in) :: liq_tauc(:,:,:)    ! XL added cloud liq optical depth
+   real(kind=r8), intent(in) :: ice_tauc(:,:,:)    ! XL added cloud ice optical depth
+
 
    real(kind=r8), intent(out) :: cld_stoch(:,:,:)  ! subcolumn cloud fraction 
                                                      !    Dimensions: (ngptlw,ncol,nlay)
@@ -217,6 +228,9 @@ subroutine generate_stochastic_clouds( &
                                                      !    Dimensions: (ngptlw,ncol,nlay)
    real(kind=r8), intent(out) :: tauc_stoch(:,:,:) ! subcolumn cloud optical depth
                                                      !    Dimensions: (ngptlw,ncol,nlay)
+   real(kind=r8), intent(out) :: liq_tauc_stoch(:,:,:) ! XL added subcolumn cloud liq optical depth
+   real(kind=r8), intent(out) :: ice_tauc_stoch(:,:,:) ! XL added subcolumn cloud ice optical depth
+
    ! -- Local variables
    real(kind=r8) :: cldf(ncol,nlay)                ! cloud fraction 
     
@@ -407,8 +421,12 @@ subroutine generate_stochastic_clouds( &
             if ( iscloudy(isubcol,i,ilev) .and. (cldf(i,ilev) > 0._r8) ) then
                n = ngb(isubcol)
                tauc_stoch(isubcol,i,ilev) = tauc(n,i,ilev)
+               liq_tauc_stoch(isubcol,i,ilev) = liq_tauc(n,i,ilev) ! XL: will this ensure the liq/ice component
+               ice_tauc_stoch(isubcol,i,ilev) = ice_tauc(n,i,ilev) ! XL: is consistent with the total???
             else
                tauc_stoch(isubcol,i,ilev) = 0._r8
+               liq_tauc_stoch(isubcol,i,ilev) = 0._r8 ! XL added
+               ice_tauc_stoch(isubcol,i,ilev) = 0._r8 ! XL added
             end if
          end do
       end do
