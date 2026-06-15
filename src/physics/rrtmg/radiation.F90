@@ -140,6 +140,17 @@ integer :: flnt_idx     = 0
 integer :: cldfsnow_idx = 0 
 integer :: cld_idx      = 0 
 
+integer :: cldfgrau_idx = 0    ! XL added?
+
+! XL added additional diagnostics: qrl_diag, flnt_diag, flut_diag, flutc_diag, flns_diag, flnsc_diag, flwds_diag
+integer :: qrl_diag_idx       = 0 
+integer :: flnt_diag_idx      = 0 
+integer :: flut_diag_idx      = 0
+integer :: flutc_diag_idx     = 0
+integer :: flns_diag_idx      = 0
+integer :: flnsc_diag_idx     = 0
+integer :: flwds_diag_idx     = 0
+
 character(len=4) :: diag(0:N_DIAG) =(/'    ','_d1 ','_d2 ','_d3 ','_d4 ','_d5 ','_d6 ','_d7 ','_d8 ','_d9 ','_d10'/)
 
 ! averaging time interval for zenith angle
@@ -248,6 +259,15 @@ subroutine radiation_register
 
    call pbuf_add_field('FLNS' , 'global',dtype_r8,(/pcols/), flns_idx) ! Surface net longwave flux
    call pbuf_add_field('FLNT' , 'global',dtype_r8,(/pcols/), flnt_idx) ! Top-of-model net longwave flux
+
+   ! XL added additional diagnostics: qrl_diag, flnt_diag, flut_diag, flutc_diag, flns_diag, flnsc_diag, flwds_diag
+   call pbuf_add_field('QRL_diag' ,  'global',dtype_r8,(/pcols,pver/), qrl_diag_idx) ! longwave  radiative heating rate
+   call pbuf_add_field('FLNT_diag' , 'global',dtype_r8,(/pcols/), flnt_diag_idx) ! Top-of-model net longwave flux
+   call pbuf_add_field('FLUT_diag' , 'global',dtype_r8,(/pcols/), flut_diag_idx) ! Top-of-model upwelling longwave flux
+   call pbuf_add_field('FLUTC_diag' , 'global',dtype_r8,(/pcols/), flutc_diag_idx) ! clearsky Top-of-model upwelling longwave flux
+   call pbuf_add_field('FLNS_diag' ,  'global',dtype_r8,(/pcols/), flns_diag_idx) ! Surface net longwave flux
+   call pbuf_add_field('FLNSC_diag' , 'global',dtype_r8,(/pcols/), flnsc_diag_idx) ! clearsky Surface net longwave flux
+   call pbuf_add_field('FLDS_diag' ,  'global',dtype_r8,(/pcols/), flwds_diag_idx) ! Surface downwelling longwave flux (note the name change)
 
    ! If the namelist has been configured for preserving the spectral fluxes, then create
    ! physics buffer variables to store the results.
@@ -380,7 +400,7 @@ subroutine radiation_init(pbuf2d)
    cldfsnow_idx = pbuf_get_index('CLDFSNOW',errcode=err)
 
    if (is_first_step()) then
-      call pbuf_set_field(pbuf2d, qrl_idx, 0._r8)
+      call pbuf_set_field(pbuf2d, qrl_idx, 0._r8) ! XL: maybe add qrl_diag_idx here too?
    end if
 
    ! Set the radiation timestep for cosz calculations if requested using the adjusted iradsw value from radiation
@@ -564,6 +584,22 @@ subroutine radiation_init(pbuf2d)
          call addfld('FULC'//diag(icall),    (/ 'ilev' /),'I', 'W/m2', 'Longwave clear-sky upward flux')
          call addfld('FDLC'//diag(icall),    (/ 'ilev' /),'I', 'W/m2', 'Longwave clear-sky downward flux')
 
+         ! XL added additional diagnostics: qrl_diag, flnt_diag, flut_diag, flutc_diag, flns_diag, flnsc_diag, flwds_diag
+         call addfld('QRL_diag'//diag(icall),     (/ 'lev' /), 'A', 'K/s',  'Longwave heating rate (no perturb)', sampling_seq='rad_lwsw')
+         call addfld('FLNT_diag'//diag(icall),    horiz_only,  'A', 'W/m2', 'Net longwave flux at top of model (no perturb)', &
+                                                                           sampling_seq='rad_lwsw')
+         call addfld('FLUT_diag'//diag(icall),    horiz_only,  'A', 'W/m2', 'Upwelling longwave flux at top of model  (no perturb)', &
+                                                                           sampling_seq='rad_lwsw')
+         call addfld('FLUTC_diag'//diag(icall),   horiz_only,  'A', 'W/m2', 'Clearsky upwelling longwave flux at top of model (no perturb)', &
+                                                                           sampling_seq='rad_lwsw')
+
+         call addfld('FLNS_diag'//diag(icall),    horiz_only,  'A', 'W/m2', 'Net longwave flux at surface (no perturb)',      &
+                                                                           sampling_seq='rad_lwsw')
+         call addfld('FLNSC_diag'//diag(icall),   horiz_only,  'A', 'W/m2', 'Clearsky net longwave flux at surface (no perturb)',   &
+                                                                           sampling_seq='rad_lwsw')
+         call addfld('FLDS_diag'//diag(icall),    horiz_only,  'A', 'W/m2', 'Downwelling longwave flux at surface (no perturb)',   &
+                                                                           sampling_seq='rad_lwsw')
+
          if (history_amwg) then
             call add_default('QRL'//diag(icall),   1, ' ')
             call add_default('FLNT'//diag(icall),  1, ' ')
@@ -576,6 +612,15 @@ subroutine radiation_init(pbuf2d)
             call add_default('FLNS'//diag(icall),  1, ' ')
             call add_default('FLNSC'//diag(icall), 1, ' ')
             call add_default('FLDS'//diag(icall),  1, ' ')
+
+            ! XL additional diagnostics
+            call add_default('QRL_diag'//diag(icall),   1, ' ')
+            call add_default('FLNT_diag'//diag(icall),  1, ' ')
+            call add_default('FLUT_diag'//diag(icall),  1, ' ')
+            call add_default('FLUTC_diag'//diag(icall), 1, ' ')
+            call add_default('FLNS_diag'//diag(icall),  1, ' ')
+            call add_default('FLNSC_diag'//diag(icall), 1, ' ')
+            call add_default('FLDS_diag'//diag(icall),  1, ' ')
          endif
 
       end if
@@ -767,6 +812,15 @@ subroutine radiation_tend( &
    real(r8), pointer, dimension(:,:,:) :: lu => NULL()  ! longwave  spectral flux up
    real(r8), pointer, dimension(:,:,:) :: ld => NULL()  ! longwave  spectral flux down
 
+   ! XL additional diagnostics
+   real(r8), pointer :: qrl_diag(:,:)      ! longwave  radiative heating rate
+   real(r8), pointer :: flnt_diag(:)       ! Net outgoing lw flux at model top
+   real(r8), pointer :: flut_diag(:)
+   real(r8), pointer :: flutc_diag(:)
+   real(r8), pointer :: flns_diag(:)       ! Srf longwave cooling (up-down) flux
+   real(r8), pointer :: flnsc_diag(:)
+   real(r8), pointer :: flwds_diag(:)
+
    ! tropopause diagnostic
    integer  :: troplev(pcols)
    real(r8) :: p_trop(pcols)
@@ -898,6 +952,15 @@ subroutine radiation_tend( &
    call pbuf_get_field(pbuf, fsns_idx, fsns)
    call pbuf_get_field(pbuf, flns_idx, flns)
    call pbuf_get_field(pbuf, flnt_idx, flnt)
+
+   ! XL added qrl_diag, flnt_diag, flut_diag, flutc_diag, flns_diag, flnsc_diag, flwds_diag
+   call pbuf_get_field(pbuf, qrl_diag_idx,   qrl_diag)
+   call pbuf_get_field(pbuf, flnt_diag_idx,  flnt_diag)
+   call pbuf_get_field(pbuf, flut_diag_idx,  flut_diag)
+   call pbuf_get_field(pbuf, flutc_diag_idx, flutc_diag)
+   call pbuf_get_field(pbuf, flns_diag_idx,  flns_diag)
+   call pbuf_get_field(pbuf, flnsc_diag_idx, flnsc_diag)
+   call pbuf_get_field(pbuf, flwds_diag_idx, flwds_diag)
 
    if (spectralflux) then
       call pbuf_get_field(pbuf, su_idx, su)
@@ -1150,12 +1213,19 @@ subroutine radiation_tend( &
 
                call aer_rad_props_lw(icall, state, pbuf,  aer_lw_abs)
                   
+               ! XL added qrl_diag, flnt_diag, flut_diag, flutc_diag, 
+               ! flns_diag, flnsc_diag, flwds_diag, liq_lw_abs, ice_lw_abs, 
+               ! coszrs, cam_in%landfrac, cam_in%icefrac, clat, clon, state) 
                call rad_rrtmg_lw( &
                   lchnk, ncol, num_rrtmg_levs, r_state, state%pmid,  &
                   aer_lw_abs, cldfprime, c_cld_lw_abs, qrl, rd%qrlc, &
                   flns, flnt, rd%flnsc, rd%flntc, cam_out%flwds,     &
                   rd%flut, rd%flutc, fnl, fcnl, rd%fldsc,            &
-                  lu, ld)
+                  lu, ld,                                            & 
+                  qrl_diag, flnt_diag, flut_diag, flutc_diag,        & 
+                  flns_diag, flnsc_diag, flwds_diag,                 &                   
+                  liq_lw_abs, ice_lw_abs, coszrs, cam_in%landfrac, cam_in%icefrac, & 
+                  clat, clon, state)
 
                !  Output fluxes at 200 mb
                call vertinterp(ncol, pcols, pverp, state%pint, 20000._r8, fnl,  rd%fln200)
@@ -1226,7 +1296,7 @@ subroutine radiation_tend( &
       ! convert radiative heating rates from Q*dp to Q for energy conservation
       do k =1 , pver
          do i = 1, ncol
-            qrs(i,k) = qrs(i,k)/state%pdel(i,k)
+            qrs(i,k) = qrs(i,k)/state%pdel(i,k) ! XL: note that this is not executed as long as  if (dosw .or. dolw)
             qrl(i,k) = qrl(i,k)/state%pdel(i,k)
          end do
       end do
@@ -1254,7 +1324,7 @@ subroutine radiation_tend( &
    do k = 1, pver
       do i = 1, ncol
          qrs(i,k) = qrs(i,k)*state%pdel(i,k)
-         qrl(i,k) = qrl(i,k)*state%pdel(i,k)
+         qrl(i,k) = qrl(i,k)*state%pdel(i,k) ! XL: shall we change qrl_diag here as well??
       end do
    end do
 
@@ -1372,12 +1442,30 @@ subroutine radiation_output_lw(lchnk, ncol, icall, rd, pbuf, cam_out, freqclr, f
    real(r8), pointer :: flnt(:)
    real(r8), pointer :: flns(:)
 
+   ! XL added 
+   real(r8), pointer :: qrl_diag(:,:)
+   real(r8), pointer :: flnt_diag(:)
+   real(r8), pointer :: flut_diag(:)
+   real(r8), pointer :: flutc_diag(:)
+   real(r8), pointer :: flns_diag(:)
+   real(r8), pointer :: flnsc_diag(:)
+   real(r8), pointer :: flwds_diag(:)
+
    real(r8) :: ftem(pcols)
    !----------------------------------------------------------------------------
 
    call pbuf_get_field(pbuf, qrl_idx,  qrl)
    call pbuf_get_field(pbuf, flnt_idx, flnt)
    call pbuf_get_field(pbuf, flns_idx, flns)
+
+   ! XL additional diagnostics -- all are pointers, following qrl/flnt/flns
+   call pbuf_get_field(pbuf, qrl_diag_idx,   qrl_diag)
+   call pbuf_get_field(pbuf, flnt_diag_idx,  flnt_diag)
+   call pbuf_get_field(pbuf, flut_diag_idx,  flut_diag)
+   call pbuf_get_field(pbuf, flutc_diag_idx, flutc_diag)
+   call pbuf_get_field(pbuf, flns_diag_idx,  flns_diag)
+   call pbuf_get_field(pbuf, flnsc_diag_idx, flnsc_diag)
+   call pbuf_get_field(pbuf, flwds_diag_idx, flwds_diag)
 
    call outfld('QRL'//diag(icall),     qrl(:ncol,:)/cpair,     ncol, lchnk)
    call outfld('QRLC'//diag(icall),    rd%qrlc(:ncol,:)/cpair, ncol, lchnk)
@@ -1404,6 +1492,15 @@ subroutine radiation_output_lw(lchnk, ncol, icall, rd, pbuf, cam_out, freqclr, f
 
    call outfld('FLDS'//diag(icall),    cam_out%flwds, pcols, lchnk)
    call outfld('FLDSC'//diag(icall),   rd%fldsc,      pcols, lchnk)
+
+   ! XL added qrl_diag, flnt_diag, flut_diag, flutc_diag, flns_diag, flnsc_diag, flwds_diag
+   call outfld('QRL_diag'//diag(icall),     qrl_diag(:ncol,:)/cpair,     ncol, lchnk)
+   call outfld('FLNT_diag'//diag(icall),    flnt_diag,      pcols, lchnk)
+   call outfld('FLUT_diag'//diag(icall),    flut_diag,      pcols, lchnk)
+   call outfld('FLUTC_diag'//diag(icall),   flutc_diag,     pcols, lchnk)
+   call outfld('FLNS_diag'//diag(icall),    flns_diag,      pcols, lchnk)
+   call outfld('FLNSC_diag'//diag(icall),   flnsc_diag,     pcols, lchnk)
+   call outfld('FLDS_diag'//diag(icall),    flwds_diag,     pcols, lchnk)
 
 end subroutine radiation_output_lw
 
