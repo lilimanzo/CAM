@@ -3,7 +3,7 @@ module radiation
 !---------------------------------------------------------------------------------
 !
 ! CAM interface to RRTMG radiation parameterization
-!
+! LM test comment
 !---------------------------------------------------------------------------------
 
 use shr_kind_mod,        only: r8=>shr_kind_r8
