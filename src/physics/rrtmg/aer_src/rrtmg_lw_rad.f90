@@ -82,7 +82,10 @@ subroutine rrtmg_lw &
              cfc22vmr,ccl4vmr ,emis    , &
              cldfmcl ,taucmcl ,ciwpmcl ,clwpmcl ,reicmcl ,relqmcl , &
              tauaer  , &
-             uflx    ,dflx    ,hr      ,uflxc   ,dflxc,  hrc, uflxs, dflxs )
+             uflx    ,dflx    ,hr      ,uflxc   ,dflxc,  hrc, uflxs, dflxs, &
+             uflx_diag, dflx_diag, hr_diag, uflxc_diag, dflxc_diag, hrc_diag, uflxs_diag, dflxs_diag, & ! XL line
+             liq_taucmcl, ice_taucmcl, coszrs, landfrac, icefrac, & ! XL line
+             clat, clon, state) ! XL line 
 
 ! -------- Description --------
 
@@ -145,6 +148,9 @@ subroutine rrtmg_lw &
    use rrlw_con, only: fluxfac, oneminus, pi
    use rrlw_wvn, only: ngb
 
+   ! XL added
+   use physics_types,      only: physics_state
+
    ! ----- Input -----
    integer, intent(in) :: lchnk                      ! chunk identifier
    integer, intent(in) :: ncol                       ! Number of horizontal columns
@@ -199,9 +205,21 @@ subroutine rrtmg_lw &
                                                      !    Dimensions: (ncol,nlay)
    real(kind=r8), intent(in) :: taucmcl(:,:,:)       ! Cloud optical depth
                                                      !    Dimensions: (ngptlw,ncol,nlay)
+
+   real(kind=r8), intent(in) :: liq_taucmcl(:,:,:)   ! XL Cloud liq optical depth
+   real(kind=r8), intent(in) :: ice_taucmcl(:,:,:)   ! XL Cloud liq optical depth
+   real(kind=r8), intent(in) :: coszrs(:)            ! XL Cosine solar zenith angle=coszrs(pcols)            
+   real(kind=r8), intent(in) :: landfrac(:)          ! XL Land fraction (fraction)
+   real(kind=r8), intent(in) :: icefrac(:)           ! XL sea ice fraction (fraction)
+   real(kind=r8), intent(in) :: clat(:)              ! XL current latitudes(radians)
+   real(kind=r8), intent(in) :: clon(:)              ! XL current longitudes(radians)
+
    real(kind=r8), intent(in) :: tauaer(:,:,:)        ! aerosol optical depth
                                                      !   at mid-point of LW spectral bands
                                                      !    Dimensions: (ncol,nlay,nbndlw)
+
+   ! XL added
+   type(physics_state), intent(in), target :: state
 
    ! ----- Output -----
 
@@ -221,6 +239,24 @@ subroutine rrtmg_lw &
                                                      !    Dimensions: (nbndlw,ncol,nlay+1)
    real(kind=r8), intent(out) :: dflxs(:,:,:)        ! Total sky longwave downward flux spectral (W/m2)
                                                      !    Dimensions: (nbndlw,ncol,nlay+1)
+   ! XL additional output (8 total)
+   real(kind=r8), intent(out) :: uflx_diag(:,:)           ! Total sky longwave upward flux (W/m2)
+                                                     !    Dimensions: (ncol,nlay+1)
+   real(kind=r8), intent(out) :: dflx_diag(:,:)           ! Total sky longwave downward flux (W/m2)
+                                                     !    Dimensions: (ncol,nlay+1)
+   real(kind=r8), intent(out) :: hr_diag(:,:)             ! Total sky longwave radiative heating rate (K/d)
+                                                     !    Dimensions: (ncol,nlay)
+   real(kind=r8), intent(out) :: uflxc_diag(:,:)          ! Clear sky longwave upward flux (W/m2)
+                                                     !    Dimensions: (ncol,nlay+1)
+   real(kind=r8), intent(out) :: dflxc_diag(:,:)          ! Clear sky longwave downward flux (W/m2)
+                                                     !    Dimensions: (ncol,nlay+1)
+   real(kind=r8), intent(out) :: hrc_diag(:,:)            ! Clear sky longwave radiative heating rate (K/d)
+                                                     !    Dimensions: (ncol,nlay)
+   real(kind=r8), intent(out) :: uflxs_diag(:,:,:)        ! Total sky longwave upward flux spectral (W/m2)
+                                                     !    Dimensions: (nbndlw,ncol,nlay+1)
+   real(kind=r8), intent(out) :: dflxs_diag(:,:,:)        ! Total sky longwave downward flux spectral (W/m2)
+                                                     !    Dimensions: (nbndlw,ncol,nlay+1)
+
 
    ! ----- Local -----
 
@@ -300,6 +336,8 @@ subroutine rrtmg_lw &
    real(kind=r8) :: reicmc(nlay)             ! ice particle effective radius (microns)
    real(kind=r8) :: dgesmc(nlay)             ! ice particle generalized effective size (microns)
    real(kind=r8) :: taucmc(ngptlw,nlay)      ! cloud optical depth [mcica]
+   real(kind=r8) :: liq_taucmc(ngptlw,nlay)  ! Xia.Li_2026
+   real(kind=r8) :: ice_taucmc(ngptlw,nlay)  ! Xia.Li_2026
 
    ! Output
    real(kind=r8) :: totuflux(0:nlay)         ! upward longwave flux (w/m2)
@@ -312,6 +350,25 @@ subroutine rrtmg_lw &
    real(kind=r8) :: totdclfl(0:nlay)         ! clear sky downward longwave flux (w/m2)
    real(kind=r8) :: fnetc(0:nlay)            ! clear sky net longwave flux (w/m2)
    real(kind=r8) :: htrc(0:nlay)             ! clear sky longwave heating rate (k/day)
+
+   ! XL additional output (10 in total)
+   real(kind=r8) :: totuflux_diag(0:nlay)         ! upward longwave flux (w/m2)
+   real(kind=r8) :: totdflux_diag(0:nlay)         ! downward longwave flux (w/m2)
+   real(kind=r8) :: totufluxs_diag(nbndlw,0:nlay) ! upward longwave flux spectral (w/m2)
+   real(kind=r8) :: totdfluxs_diag(nbndlw,0:nlay) ! downward longwave flux spectral (w/m2)
+   real(kind=r8) :: fnet_diag(0:nlay)             ! net longwave flux (w/m2)
+   real(kind=r8) :: htr_diag(0:nlay)              ! longwave heating rate (k/day)
+   real(kind=r8) :: totuclfl_diag(0:nlay)         ! clear sky upward longwave flux (w/m2)
+   real(kind=r8) :: totdclfl_diag(0:nlay)         ! clear sky downward longwave flux (w/m2)
+   real(kind=r8) :: fnetc_diag(0:nlay)            ! clear sky net longwave flux (w/m2)
+   real(kind=r8) :: htrc_diag(0:nlay)             ! clear sky longwave heating rate (k/day)
+
+   ! XL add logical variable to control if zero cloud fraction or not
+   logical :: do_zero_cld_yes
+   logical :: do_zero_cld_no
+   do_zero_cld_yes = .true.
+   do_zero_cld_no  = .false.
+   
    !----------------------------------------------------------------------------
 
    oneminus = 1._r8 - 1.e-6_r8
@@ -335,7 +392,8 @@ subroutine rrtmg_lw &
                  cldfmcl, taucmcl, ciwpmcl, clwpmcl, reicmcl, relqmcl, tauaer, &
                  pavel, pz, tavel, tz, tbound, semiss, coldry, &
                  wkl, wbrodl, wx, pwvcm, &
-                 cldfmc, taucmc, ciwpmc, clwpmc, reicmc, dgesmc, relqmc, taua)
+                 cldfmc, taucmc, ciwpmc, clwpmc, reicmc, dgesmc, relqmc, taua, &
+                 liq_taucmcl, ice_taucmcl, liq_taucmc, ice_taucmc) ! XL added
 
       ! Calculate information needed by the radiative transfer routine
       ! that is specific to this atmosphere
@@ -387,7 +445,34 @@ subroutine rrtmg_lw &
                   cldfmc, taucmc, planklay, planklev, plankbnd, &
                   pwvcm, fracs, taut, &
                   totuflux, totdflux, fnet, htr, &
-                  totuclfl, totdclfl, fnetc, htrc, totufluxs, totdfluxs )
+                  totuclfl, totdclfl, fnetc, htrc, totufluxs, totdfluxs, &
+                  liq_taucmc, ice_taucmc, coszrs(iplon), landfrac(iplon), icefrac(iplon), pavel, tavel, &  ! XL line
+                  clat(iplon), clon(iplon), do_zero_cld_yes, state) ! XL line
+      ! XL: note clat(pcols=max # of cols processed in a chunk), while ncol=actual colums in this chunk (ncol<=pcols) )
+
+      ! XL: call the radiative transfer routine one more time to calculate fluxes without zeroing cloud fraction
+      ! note: pass the new fluxes w/o modification back to radiation.F90 and output to history there
+      ! note: rtrnmc is only called here
+        ! output
+        !    totuflux                     ! upward longwave flux (w/m2): (0:nlayers)
+        !    totdflux                     ! downward longwave flux (w/m2): (0:nlayers)
+        !    fnet                         ! net longwave flux (w/m2): (0:nlayers)
+        !    htr                          ! longwave heating rate (k/day): (0:nlayers)
+        !    totuclfl                     ! clear sky upward longwave flux (w/m2): (0:nlayers)
+        !    totdclfl                     ! clear sky downward longwave flux (w/m2): (0:nlayers)
+        !    fnetc                        ! clear sky net longwave flux (w/m2): (0:nlayers)
+        !    htrc                         ! clear sky longwave heating rate (k/day): (0:nlayers)
+        !    totufluxs                    ! upward longwave flux spectral (w/m2): (nbndlw, 0:nlayers)
+        !    totdfluxs                    ! downward longwave flux spectral (w/m2): (nbndlw, 0:nlayers)
+
+      call rtrnmc(nlay, istart, iend, iout, pz, semiss, &
+                  cldfmc, taucmc, planklay, planklev, plankbnd, &
+                  pwvcm, fracs, taut, &
+                  totuflux_diag, totdflux_diag, fnet_diag, htr_diag, & ! XL: flux w/o mod. for diagnostic purpose only
+                  totuclfl_diag, totdclfl_diag, fnetc_diag, htrc_diag, totufluxs_diag, totdfluxs_diag, & ! XL: flux w/o mod.
+                  liq_taucmc, ice_taucmc, coszrs(iplon), landfrac(iplon), icefrac(iplon), pavel, tavel, &
+                  clat(iplon), clon(iplon), do_zero_cld_no, state)
+      ! Xia.Li_2026: call the radiative transfer routine one more time
 
       ! Transfer up and down fluxes and heating rate to output arrays.
       ! Vertical indexing goes from bottom to top
@@ -405,6 +490,21 @@ subroutine rrtmg_lw &
          hrc(iplon,k+1) = htrc(k)
       end do
 
+      ! XL: repeat the above for the new diagnostic fluxes ----
+      do k = 0, nlay
+         uflx_diag(iplon,k+1) = totuflux_diag(k)
+         dflx_diag(iplon,k+1) = totdflux_diag(k)
+         uflxc_diag(iplon,k+1) = totuclfl_diag(k)
+         dflxc_diag(iplon,k+1) = totdclfl_diag(k)
+         uflxs_diag(:,iplon,k+1) = totufluxs_diag(1:nbndlw,k)
+         dflxs_diag(:,iplon,k+1) = totdfluxs_diag(1:nbndlw,k)
+      end do
+      do k = 0, nlay-1
+         hr_diag(iplon,k+1) = htr_diag(k)
+         hrc_diag(iplon,k+1) = htrc_diag(k)
+      end do
+     ! ----------- XL
+
    end do
 
 end subroutine rrtmg_lw
@@ -418,7 +518,8 @@ subroutine inatm(iplon, nlay, icld, iaer, &
               cldfmcl, taucmcl, ciwpmcl, clwpmcl, reicmcl, relqmcl, tauaer, &
               pavel, pz, tavel, tz, tbound, semiss, coldry, &
               wkl, wbrodl, wx, pwvcm, &
-              cldfmc, taucmc, ciwpmc, clwpmc, reicmc, dgesmc, relqmc, taua)
+              cldfmc, taucmc, ciwpmc, clwpmc, reicmc, dgesmc, relqmc, taua, &
+              liq_taucmcl, ice_taucmcl, liq_taucmc, ice_taucmc) ! XL line
 
    !  Input atmospheric profile from GCM, and prepare it for use in RRTMG_LW.
    !  Set other RRTMG_LW input parameters.  
@@ -478,6 +579,9 @@ subroutine inatm(iplon, nlay, icld, iaer, &
                                                      !    Dimensions: (ncol,nlay)
    real(kind=r8), intent(in) :: taucmcl(:,:,:)       ! Cloud optical depth
                                                      !    Dimensions: (ngptlw,ncol,nlay)
+   real(kind=r8), intent(in) :: liq_taucmcl(:,:,:)       ! XL Cloud liq optical depth
+   real(kind=r8), intent(in) :: ice_taucmcl(:,:,:)       ! XL Cloud ice optical depth
+
    real(kind=r8), intent(in) :: tauaer(:,:,:)        ! Aerosol optical depth
                                                      !    Dimensions: (ncol,nlay,nbndlw)
 
@@ -520,6 +624,9 @@ subroutine inatm(iplon, nlay, icld, iaer, &
                                                      !    Dimensions: (nlay)
    real(kind=r8), intent(out) :: taucmc(ngptlw,nlay)         ! cloud optical depth [mcica]
                                                      !    Dimensions: (ngptlw,nlay)
+   real(kind=r8), intent(out) :: liq_taucmc(ngptlw,nlay)     ! XL cloud liq optical depth [mcica]
+   real(kind=r8), intent(out) :: ice_taucmc(ngptlw,nlay)     ! XL cloud ice optical depth [mcica]
+
    real(kind=r8), intent(out) :: taua(nlay,nbndlw)           ! Aerosol optical depth
                                                      ! Dimensions: (nlay,nbndlw)
 
@@ -549,6 +656,8 @@ subroutine inatm(iplon, nlay, icld, iaer, &
    relqmc(:) = 0.0_r8
    cldfmc(:,:) = 0.0_r8
    taucmc(:,:) = 0.0_r8
+   liq_taucmc(:,:) = 0.0_r8 ! XL
+   ice_taucmc(:,:) = 0.0_r8 ! XL
    ciwpmc(:,:) = 0.0_r8
    clwpmc(:,:) = 0.0_r8
    wkl(:,:) = 0.0_r8
@@ -655,6 +764,8 @@ subroutine inatm(iplon, nlay, icld, iaer, &
          do ig = 1, ngptlw
             cldfmc(ig,l) = cldfmcl(ig,iplon,nlay-l)
             taucmc(ig,l) = taucmcl(ig,iplon,nlay-l)
+            liq_taucmc(ig,l) = liq_taucmcl(ig,iplon,nlay-l) ! XL
+            ice_taucmc(ig,l) = ice_taucmcl(ig,iplon,nlay-l) ! XL
             ciwpmc(ig,l) = ciwpmcl(ig,iplon,nlay-l)
             clwpmc(ig,l) = clwpmcl(ig,iplon,nlay-l)
          end do
