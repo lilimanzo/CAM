@@ -24,6 +24,12 @@
       use rrlw_wvn,     only: delwave, ngb, ngs
       use rrlw_tbl,     only: tblint, bpade, tau_tbl, exp_tbl, tfn_tbl
 
+      ! XL added
+      use time_manager,       only: get_curr_calday
+      use phys_grid,          only: get_rlat_all_p, get_rlon_all_p
+      use ppgrid,             only: pcols
+      use physics_types,      only: physics_state
+
       implicit none
 
       contains
@@ -33,7 +39,9 @@
                         cldfmc, taucmc, planklay, planklev, plankbnd, &
                         pwvcm, fracs, taut, &
                         totuflux, totdflux, fnet, htr, &
-                        totuclfl, totdclfl, fnetc, htrc, totufluxs, totdfluxs ) 
+                        totuclfl, totdclfl, fnetc, htrc, totufluxs, totdfluxs, &
+                        liq_taucmc, ice_taucmc, coszrs_c, landfrac_c, icefrac_c, pavel, tavel, &  ! XL line
+                        clat_c, clon_c, do_zero_cld, state) ! XL line
 !-----------------------------------------------------------------------------
 !
 !  Original version:   E. J. Mlawer, et al. RRTM_V3.0
@@ -78,12 +86,25 @@
                                                         !    Dimensions: (nlayers,ngptw)
       real(kind=r8), intent(in) :: taut(nlayers,ngptlw)            ! gaseous + aerosol optical depths
                                                         !    Dimensions: (nlayers,ngptlw)
+      real(kind=r8), intent(in) :: pavel(nlayers)       ! XL: layer pressures (mb)
+                                                            !    Dimensions: (nlayers)
+      real(kind=r8), intent(in) :: tavel(nlayers)       ! XL: layer temperatures (K)
+                                                            !    Dimensions: (nlayers)
+
 
 ! Clouds
       real(kind=r8), intent(in) :: cldfmc(ngptlw,nlayers)          ! layer cloud fraction [mcica]
                                                         !    Dimensions: (ngptlw,nlayers)
       real(kind=r8), intent(in) :: taucmc(ngptlw,nlayers)          ! layer cloud optical depth [mcica]
                                                         !    Dimensions: (ngptlw,nlayers)
+      real(kind=r8), intent(in) :: liq_taucmc(ngptlw,nlayers)  ! XL
+      real(kind=r8), intent(in) :: ice_taucmc(ngptlw,nlayers)  ! XL
+      real(kind=r8), intent(in) :: coszrs_c                    ! XL Cosine solar zenith angle - constant
+      real(kind=r8), intent(in) :: landfrac_c                  ! XL Land fraction (fraction) - constant
+      real(kind=r8), intent(in) :: icefrac_c                   ! XL seaice fraction (fraction) - constant
+      real(kind=r8), intent(in) :: clat_c                      ! XL current latitudes(radians) - constant
+      real(kind=r8), intent(in) :: clon_c                      ! XL current longitudes(radians) - constant
+      logical, intent(in) :: do_zero_cld                       ! XL
 
 ! ----- Output -----
       real(kind=r8), intent(out) :: totuflux(0:)        ! upward longwave flux (w/m2)
@@ -139,6 +160,16 @@
       integer :: igc                                     ! g-point interval counter
       integer :: iclddn                                  ! flag for cloud in down path
       integer :: ittot, itgas, itr                       ! lookup table indices
+
+      ! XL added
+      real(r8) :: rad_60        ! radians of the geoengineering region lower bound (60N)
+      real(r8) :: calday        ! current calendar day
+      integer  :: i
+      integer  :: lchnk, ncol
+      real(r8) :: clat(pcols)     ! current latitudes(radians)
+      real(r8) :: clon(pcols)     ! current longitudes(radians)
+      type(physics_state), intent(in), target :: state
+      real(r8) :: cldfmc_local(ngptlw,nlayers)
 
 ! ------- Definitions -------
 ! input
@@ -251,6 +282,56 @@
          totdclfl(lay) = 0.0_r8
          icldlyr(lay) = 0
       enddo
+
+!========== XL Modification Begin ==========
+
+      cldfmc_local = cldfmc
+      rad_60  = (60.0_r8/180.0_r8) * (4.0_r8*atan(1.0_r8))
+      calday  = get_curr_calday() !real
+
+      ! only zero cloud fraction if do_zero_cld == .true.
+      if (do_zero_cld) then
+
+          ! north of 60N && non-land (landfrac<=0.1) && open-ocean (icefrac<=0.5)
+          if ( (clat_c .ge. rad_60) .and. (landfrac_c .le. 0.1_r8) .and. (icefrac_c .le. 0.5_r8) ) then
+               ! winter (Nov -Feb)
+               if ( (calday .le. 59._r8) .or. (calday .ge. 305._r8) ) then
+                  ! nighttime
+                  if (coszrs_c .le. 0.0_r8) then
+
+                     do lay = 1, nlayers
+                        ! low clouds: CTP > 635 hPa
+                        if (pavel(lay) .ge. 635._r8) then
+                           ! liquid-containing: liq_taucmc > 0
+                           where (liq_taucmc(:,lay) .gt. 0.0_r8)
+                              cldfmc_local(:,lay) = 0.0_r8
+                           end where
+                        end if
+                     end do
+
+                  end if
+               end if
+            ! sanity check    
+            !write(*,'(A,F12.6)') 'clat_c    = ', clat_c
+            !write(*,'(A,F12.6)') 'rad_60    = ', rad_60
+            !write(*,'(A,F12.6)') 'landfrac_c= ', landfrac_c
+            !write(*,'(A,F12.6)') 'calday    = ', calday
+            !write(*,'(A,F12.6)') 'coszrs_c  = ', coszrs_c
+            !write(*,'(A,F12.6)') 'max(pavel)= ', maxval(pavel)
+            !write(*,'(A,F12.6)') 'min(pavel)= ', minval(pavel)
+            !write(*,'(A,F12.6)') 'max(liq_taumc)= ', maxval(liq_taucmc)
+            !write(*,'(A,F12.6)') 'min(liq_taumc)= ', minval(liq_taucmc)
+
+          end if
+
+      end if ! do_zero_cld
+
+      !write(*,*) 'do_zero_cld = ', do_zero_cld
+
+!========== XL Modification End ==========
+
+
+
 ! Change to band loop?
       do ig = 1, ngptlw
          do lay = 1, nlayers
