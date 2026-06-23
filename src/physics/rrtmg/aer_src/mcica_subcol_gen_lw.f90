@@ -127,7 +127,7 @@ subroutine mcica_subcol_lw(lchnk, ncol, nlay, icld, permuteseed, play, &
    call generate_stochastic_clouds( &
       ncol, nlay, nsubclw, icld, pmid, &
       cldfrac, clwp, ciwp, tauc, liq_tauc, ice_tauc, cldfmcl, &
-      clwpmcl, ciwpmcl, taucmcl, permuteseed)
+      clwpmcl, ciwpmcl, taucmcl, liq_taucmcl, ice_taucmcl, permuteseed)
 
 end subroutine mcica_subcol_lw
 
