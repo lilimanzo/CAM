@@ -39,19 +39,27 @@ integer, parameter :: icld = 2
 !===============================================================================
 CONTAINS
 !===============================================================================
-
+! XL added qrl_diag,flnt_diag,flut_diag,flutc_diag,flns_diag,flnsc_diag,flwds_diag,              &
+! liq_tauc_lw,ice_tauc_lw,coszrs,landfrac,icefrac,clat,clon,state
 subroutine rad_rrtmg_lw(lchnk   ,ncol      ,rrtmg_levs,r_state,       &
                         pmid    ,aer_lw_abs,cld       ,tauc_lw,       &
                         qrl     ,qrlc      ,                          &
                         flns    ,flnt      ,flnsc     ,flntc  ,flwds, &
                         flut    ,flutc     ,fnl       ,fcnl   ,fldsc, &
-                        lu      ,ld        )
+                        lu      ,ld        ,                          &
+                        qrl_diag,flnt_diag ,flut_diag ,flutc_diag,    & 
+                        flns_diag,flnsc_diag,flwds_diag,              & 
+                        liq_tauc_lw,ice_tauc_lw,coszrs,landfrac,icefrac, & 
+                        clat    ,clon      ,state)
 
 !-----------------------------------------------------------------------
    use cam_history,         only: outfld
    use mcica_subcol_gen_lw, only: mcica_subcol_lw
    use physconst,           only: cpair
    use rrtmg_state,         only: rrtmg_state_t
+
+   ! XL added
+   use physics_types,      only: physics_state
 
 !------------------------------Arguments--------------------------------
 !
@@ -60,6 +68,9 @@ subroutine rad_rrtmg_lw(lchnk   ,ncol      ,rrtmg_levs,r_state,       &
    integer, intent(in) :: lchnk                 ! chunk identifier
    integer, intent(in) :: ncol                  ! number of atmospheric columns
    integer, intent(in) :: rrtmg_levs            ! number of levels rad is applied
+
+   ! XL added
+   type(physics_state), intent(in), target :: state
 
 !
 ! Input arguments which are only passed to other routines
@@ -72,6 +83,14 @@ subroutine rad_rrtmg_lw(lchnk   ,ncol      ,rrtmg_levs,r_state,       &
 
    real(r8), intent(in) :: cld(pcols,pver)      ! Cloud cover
    real(r8), intent(in) :: tauc_lw(nbndlw,pcols,pver)   ! Cloud longwave optical depth by band
+
+   real(r8), intent(in) :: liq_tauc_lw(nbndlw,pcols,pver) ! XL: Cloud liq longwave optical depth by band
+   real(r8), intent(in) :: ice_tauc_lw(nbndlw,pcols,pver) ! XL: Cloud ice longwave optical depth by band
+   real(r8), intent(in) :: coszrs(pcols)   ! XL: Cosine solar zenith angle
+   real(r8), intent(in) :: landfrac(pcols) ! XL: Land fraction (fraction)
+   real(r8), intent(in) :: icefrac(pcols)  ! XL: sea ice fraction (fraction)
+   real(r8), intent(in) :: clat(pcols)     ! XL: current latitudes(radians)
+   real(r8), intent(in) :: clon(pcols)     ! XL: current longitudes(radians) 
 
 !
 ! Output arguments
@@ -91,6 +110,15 @@ subroutine rad_rrtmg_lw(lchnk   ,ncol      ,rrtmg_levs,r_state,       &
 
    real(r8), pointer, dimension(:,:,:) :: lu ! longwave spectral flux up
    real(r8), pointer, dimension(:,:,:) :: ld ! longwave spectral flux down
+
+   ! XL additional outputs (7)
+   real(r8), intent(out) :: qrl_diag (pcols,pver)     ! Longwave heating rate
+   real(r8), intent(out) :: flnt_diag(pcols)          ! Net outgoing flux
+   real(r8), intent(out) :: flut_diag(pcols)          ! Upward flux at top of model
+   real(r8), intent(out) :: flutc_diag(pcols)         ! Upward clear-sky flux at top of model
+   real(r8), intent(out) :: flns_diag(pcols)          ! Surface cooling flux
+   real(r8), intent(out) :: flnsc_diag(pcols)         ! Clear sky surface cooing
+   real(r8), intent(out) :: flwds_diag(pcols)         ! Down longwave flux at surface
    
 !
 !---------------------------Local variables-----------------------------
@@ -124,6 +152,8 @@ subroutine rad_rrtmg_lw(lchnk   ,ncol      ,rrtmg_levs,r_state,       &
    real(r8) :: rei_stolw(pcols,rrtmg_levs-1)               ! ice particle size (mcica)
    real(r8) :: rel_stolw(pcols,rrtmg_levs-1)               ! liquid particle size (mcica)
    real(r8) :: tauc_stolw(nsubclw, pcols, rrtmg_levs-1)    ! cloud optical depth (mcica - optional)
+   real(r8) :: liq_tauc_stolw(nsubclw, pcols, rrtmg_levs-1)    ! XL: cloud liq optical depth (mcica - optional)
+   real(r8) :: ice_tauc_stolw(nsubclw, pcols, rrtmg_levs-1)    ! XL: cloud ice optical depth (mcica - optional)
 
    ! Includes extra layer above model top
    real(r8) :: uflx(pcols,rrtmg_levs+1)  ! Total upwards longwave flux
@@ -134,6 +164,16 @@ subroutine rad_rrtmg_lw(lchnk   ,ncol      ,rrtmg_levs,r_state,       &
    real(r8) :: hrc(pcols,rrtmg_levs)     ! Clear sky longwave heating rate (K/d)
    real(r8) lwuflxs(nbndlw,pcols,pverp+1)  ! Longwave spectral flux up
    real(r8) lwdflxs(nbndlw,pcols,pverp+1)  ! Longwave spectral flux down
+
+   ! XL additional outputs
+   real(r8) :: uflx_diag(pcols,rrtmg_levs+1)  ! Total upwards longwave flux
+   real(r8) :: uflxc_diag(pcols,rrtmg_levs+1) ! Clear sky upwards longwave flux
+   real(r8) :: dflx_diag(pcols,rrtmg_levs+1)  ! Total downwards longwave flux
+   real(r8) :: dflxc_diag(pcols,rrtmg_levs+1) ! Clear sky downwards longwv flux
+   real(r8) :: hr_diag(pcols,rrtmg_levs)      ! Longwave heating rate (K/d)
+   real(r8) :: hrc_diag(pcols,rrtmg_levs)     ! Clear sky longwave heating rate (K/d)
+   real(r8) uflxs_diag(nbndlw,pcols,pverp+1)  ! Longwave spectral flux up
+   real(r8) dflxs_diag(nbndlw,pcols,pverp+1)  ! Longwave spectral flux down
    !-----------------------------------------------------------------------
 
    ! mji/rrtmg
@@ -167,7 +207,9 @@ subroutine rad_rrtmg_lw(lchnk   ,ncol      ,rrtmg_levs,r_state,       &
 
    call mcica_subcol_lw(lchnk, ncol, rrtmg_levs-1, icld, permuteseed, pmid(:, pverp-rrtmg_levs+1:pverp-1), &
       cld(:, pverp-rrtmg_levs+1:pverp-1), cicewp, cliqwp, rei, rel, tauc_lw(:, :ncol, pverp-rrtmg_levs+1:pverp-1), &
-      cld_stolw, cicewp_stolw, cliqwp_stolw, rei_stolw, rel_stolw, tauc_stolw)
+      liq_tauc_lw(:, :ncol, pverp-rrtmg_levs+1:pverp-1), ice_tauc_lw(:, :ncol, pverp-rrtmg_levs+1:pverp-1), & ! XL line
+      cld_stolw, cicewp_stolw, cliqwp_stolw, rei_stolw, rel_stolw, tauc_stolw, & 
+      liq_tauc_stolw, ice_tauc_stolw) ! XL line
 
    call t_stopf('mcica_subcol_lw')
 
@@ -195,7 +237,10 @@ subroutine rad_rrtmg_lw(lchnk   ,ncol      ,rrtmg_levs,r_state,       &
         cld_stolw,tauc_stolw,cicewp_stolw,cliqwp_stolw ,rei, rel, &
         taua_lw, &
         uflx    ,dflx    ,hr      ,uflxc   ,dflxc   ,hrc, &
-        lwuflxs, lwdflxs)
+        lwuflxs, lwdflxs, &
+        uflx_diag, dflx_diag, hr_diag, uflxc_diag, dflxc_diag, hrc_diag, uflxs_diag, dflxs_diag, & ! XL line
+        liq_tauc_stolw, ice_tauc_stolw, coszrs, landfrac, icefrac, &                               ! XL line
+        clat, clon, state)                                                                         ! XL line
 
    !
    !----------------------------------------------------------------------
@@ -214,6 +259,14 @@ subroutine rad_rrtmg_lw(lchnk   ,ncol      ,rrtmg_levs,r_state,       &
    flntc(:ncol) = uflxc(:ncol,rrtmg_levs) - dflxc(:ncol,rrtmg_levs)
    flut(:ncol)  = uflx (:ncol,rrtmg_levs)
    flutc(:ncol) = uflxc(:ncol,rrtmg_levs)
+
+   !XL additional diagnostics
+   flwds_diag(:ncol) = dflx_diag (:ncol,1)
+   flns_diag(:ncol)  = uflx_diag (:ncol,1) - dflx_diag (:ncol,1)
+   flnsc_diag(:ncol) = uflxc_diag(:ncol,1) - dflxc_diag(:ncol,1)
+   flnt_diag(:ncol)  = uflx_diag (:ncol,rrtmg_levs) - dflx_diag (:ncol,rrtmg_levs)
+   flut_diag(:ncol)  = uflx_diag (:ncol,rrtmg_levs)
+   flutc_diag(:ncol) = uflxc_diag(:ncol,rrtmg_levs)
 
    !
    ! Reverse vertical indexing here for CAM arrays to go from top to bottom.
@@ -241,13 +294,16 @@ subroutine rad_rrtmg_lw(lchnk   ,ncol      ,rrtmg_levs,r_state,       &
    ! Pass longwave heating to CAM arrays and convert from K/d to J/kg/s
    qrl = 0._r8
    qrlc = 0._r8
+   qrl_diag = 0._r8                                                                     ! XL added
    qrl (:ncol,pverp-rrtmg_levs+1:pver)=hr (:ncol,rrtmg_levs-1:1:-1)*cpair*dps
    qrlc(:ncol,pverp-rrtmg_levs+1:pver)=hrc(:ncol,rrtmg_levs-1:1:-1)*cpair*dps
+   qrl_diag (:ncol,pverp-rrtmg_levs+1:pver)=hr_diag (:ncol,rrtmg_levs-1:1:-1)*cpair*dps ! XL added
 
    ! Return 0 above solution domain
    if ( ntoplw > 1 )then
       qrl(:ncol,:ntoplw-1) = 0._r8
       qrlc(:ncol,:ntoplw-1) = 0._r8
+      qrl_diag(:ncol,:ntoplw-1) = 0._r8 ! XL added
    end if
 
    ! Pass spectral fluxes, reverse layering
