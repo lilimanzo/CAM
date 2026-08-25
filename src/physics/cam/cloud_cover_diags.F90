@@ -25,6 +25,7 @@ subroutine cloud_cover_diags_init(sampling_seq)
   logical :: history_amwg         ! output the variables used by the AMWG diag package
 
   call addfld ('CLOUD', (/ 'lev' /), 'A','fraction','Cloud fraction'                        , sampling_seq=sampling_seq)
+  call addfld ('CLOUD_COPY', (/ 'lev' /), 'A','fraction','Copy of cloud fraction'           , sampling_seq=sampling_seq)  ! LM added
   call addfld ('CLDTOT',horiz_only,  'A','fraction','Vertically-integrated total cloud'     , sampling_seq=sampling_seq)
   call addfld ('CLDLOW',horiz_only,  'A','fraction','Vertically-integrated low cloud'       , sampling_seq=sampling_seq)
   call addfld ('CLDMED',horiz_only,  'A','fraction','Vertically-integrated mid-level cloud' , sampling_seq=sampling_seq)
@@ -35,6 +36,7 @@ subroutine cloud_cover_diags_init(sampling_seq)
  
   if (history_amwg) then
       call add_default ('CLOUD   ', 1, ' ')
+      call add_default ('CLOUD_COPY', 1, ' ') ! LM added
       call add_default ('CLDTOT  ', 1, ' ')
       call add_default ('CLDLOW  ', 1, ' ')
       call add_default ('CLDMED  ', 1, ' ')
@@ -70,6 +72,7 @@ subroutine cloud_cover_diags_out(lchnk, ncol, cld, pmid, nmxrgn, pmxrgn )
   call outfld('CLDHGH  ',clhgh  ,pcols,lchnk)
 
   call outfld('CLOUD   ',cld    ,pcols,lchnk) 
+  call outfld('CLOUD_COPY',cld    ,pcols,lchnk) ! LM added
 
 end subroutine cloud_cover_diags_out
 
